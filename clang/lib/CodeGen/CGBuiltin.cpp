@@ -675,6 +675,35 @@ static Function *getIntrinsic(CodeGenFunction &CGF, llvm::Value *Src0,
              : CGF.CGM.getIntrinsic(IntrinsicID, Src0->getType());
 }
 
+using FuncNamePair = std::pair<Function*, std::string>;
+static FuncNamePair EmitMaybeIntrinsic2(CodeGenFunction &CGF, const CallExpr *E,
+                                        unsigned FPAccuracyIntrinsicID,
+                                        unsigned IntrinsicID,
+                                        llvm::Value *Src0) {
+  Function *Func = nullptr;
+  std::string Name;
+  if (FPAccuracyIntrinsicID != Intrinsic::not_intrinsic) {
+    if (!CGF.getLangOpts().FPAccuracyVal.empty() ||
+        !CGF.getLangOpts().FPAccuracyFuncMap.empty()) {
+      if (CGF.getLangOpts().MathErrno) {
+        DiagnosticsEngine &Diags = CGF.CGM.getDiags();
+        Diags.Report(E->getBeginLoc(), diag::err_drv_incompatible_options)
+            << "-ffp-accuracy"
+            << "-fmath-errno";
+      } else {
+        Name =
+            CGF.CGM.getContext().BuiltinInfo.getName(CGF.getCurrentBuiltinID());
+        // Use fpbuiltin intrinsic only when needed.
+        Func = getIntrinsic(CGF, Src0, FPAccuracyIntrinsicID, IntrinsicID,
+                            CGF.hasAccuracyRequirement(Name));
+      }
+    }
+  }
+  FuncNamePair Res = std::pair<Function *, std::string>(Func, Name);
+  return Res;
+}
+
+#if 0
 static Function *emitMaybeIntrinsic(CodeGenFunction &CGF, const CallExpr *E,
                                     unsigned FPAccuracyIntrinsicID,
                                     unsigned IntrinsicID, llvm::Value *Src0,
@@ -699,7 +728,7 @@ static Function *emitMaybeIntrinsic(CodeGenFunction &CGF, const CallExpr *E,
   }
   return Func;
 }
-
+#endif
 // Emit a simple mangled intrinsic that has 1 argument and a return type
 // matching the argument type. Depending on mode, this may be a constrained
 // or an fpbuiltin floating-point intrinsic.
@@ -708,9 +737,14 @@ static Value *emitUnaryMaybeConstrainedFPBuiltin(
     unsigned ConstrainedIntrinsicID,
     unsigned FPAccuracyIntrinsicID = Intrinsic::not_intrinsic) {
   llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
-  StringRef Name;
-  Function *Func = emitMaybeIntrinsic(CGF, E, FPAccuracyIntrinsicID,
-                                      IntrinsicID, Src0, Name);
+  std::string Name;
+  Function* Func;
+  FuncNamePair Res = EmitMaybeIntrinsic2(CGF, E, FPAccuracyIntrinsicID,
+                                         IntrinsicID, Src0);
+  Func = Res.first;
+  Name = Res.second;
+  //Function *Func = emitMaybeIntrinsic(CGF, E, FPAccuracyIntrinsicID,
+  //                                    IntrinsicID, Src0, Name);
   if (Func)
     return CGF.CreateBuiltinCallWithAttr(Name, Func, {Src0},
                                          FPAccuracyIntrinsicID);
@@ -733,9 +767,12 @@ static Value *emitBinaryMaybeConstrainedFPBuiltin(
     unsigned FPAccuracyIntrinsicID = Intrinsic::not_intrinsic) {
   llvm::Value *Src0 = CGF.EmitScalarExpr(E->getArg(0));
   llvm::Value *Src1 = CGF.EmitScalarExpr(E->getArg(1));
-  StringRef Name;
-  Function *Func = emitMaybeIntrinsic(CGF, E, FPAccuracyIntrinsicID,
-                                      IntrinsicID, Src0, Name);
+  Function *Func;
+  std::string Name;
+  FuncNamePair Res = EmitMaybeIntrinsic2(CGF, E, FPAccuracyIntrinsicID,
+                                         IntrinsicID, Src0);
+  Func = Res.first;
+  Name = Res.second;
   if (Func)
     return CGF.CreateBuiltinCallWithAttr(Name, Func, {Src0, Src1},
                                          FPAccuracyIntrinsicID);
@@ -3362,6 +3399,12 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
     case Builtin::BI__builtin_sincosf16:
     case Builtin::BI__builtin_sincosl:
     case Builtin::BI__builtin_sincosf128:
+        #if 0
+      return RValue::get(emitBinaryMaybeConstrainedFPBuiltin(
+          *this, E, Intrinsic::sincos,
+          Intrinsic::experimental_constrained_sincos,
+          Intrinsic::fpbuiltin_sincos));
+      #endif
       emitSincosBuiltin(*this, E, Intrinsic::sincos);
       return RValue::get(nullptr);
 

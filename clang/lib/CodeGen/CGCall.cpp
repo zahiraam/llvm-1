@@ -5894,6 +5894,13 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       bool isFp32SqrtFunction =
           (FuncName == "sqrt" && !getLangOpts().OffloadFP32PrecSqrt &&
            IsFloat32Type);
+      bool ArgsTypeIsFloat = false;
+      for (auto Arg : IRCallArgs) {
+        if (Arg->getType()->isFloatingPointTy()) {
+		  ArgsTypeIsFloat = true;
+		  break;
+		}
+	  }
       if (hasFPAccuracyFuncMap || hasFPAccuracyVal || isFp32SqrtFunction) {
         CI = MaybeEmitFPBuiltinofFD(IRFuncTy, IRCallArgs, CalleePtr,
                                     FD->getName(), FD->getBuiltinID());
